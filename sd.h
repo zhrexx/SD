@@ -51,6 +51,14 @@ static LARGE_INTEGER g_fps_timer;
 #define SD_GRAY    0x808080
 #define SD_BROWN   0x8B4513
 
+
+// DEFINITION
+
+typedef struct {
+    float x, y;
+} Point;
+
+// EVENTS
 static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_PAINT: {
@@ -110,11 +118,37 @@ static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         case WM_CLOSE:
             g_should_close = 1;
             return 0;
+        case WM_SIZE: {
+            g_width = LOWORD(lParam);
+            g_height = HIWORD(lParam);
+
+            if (g_hBitmap) {
+                DeleteObject(g_hBitmap);
+                g_hBitmap = NULL;
+                g_pixels = NULL;
+            }
+
+            HDC dc = GetDC(hwnd);
+            BITMAPINFO bi = {0};
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = g_width;
+            bi.bmiHeader.biHeight = -g_height;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+
+            g_hBitmap = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &g_pixels, NULL, 0);
+            ReleaseDC(hwnd, dc);
+
+            return 0;
+        }
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void SD_CreateWindow(int width, int height, const char* title) {
+// WINDOW
+
+void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
     g_width = width;
     g_height = height;
     g_should_close = 0;
@@ -142,11 +176,19 @@ void SD_CreateWindow(int width, int height, const char* title) {
     MultiByteToWideChar(CP_UTF8, 0, title, -1, wtitle, len);
 
     RECT rect = {0, 0, width, height};
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+
+    DWORD style;
+    if (!resizable) {
+        style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    } else {
+        style = WS_OVERLAPPED; // WARN: CAN CAUSE FPS DROP
+    }
+
+    AdjustWindowRect(&rect, style, FALSE);
 
     g_hwnd = CreateWindowW(
         CLASS_NAME, wtitle,
-        WS_OVERLAPPEDWINDOW,
+        style,
         CW_USEDEFAULT, CW_USEDEFAULT,
         rect.right - rect.left, rect.bottom - rect.top,
         NULL, NULL, hInst, NULL
@@ -251,6 +293,8 @@ void SD_SetFPS(int fps) {
 float SD_GetFPS() {
     return g_fps;
 }
+
+// DRAW
 
 void SD_Fill(unsigned int color) {
     if (!g_pixels) return;
@@ -439,6 +483,8 @@ void SD_DrawFText(int x, int y, unsigned int color, float scale, const char* fmt
     SD_DrawText(x, y, buffer, color, scale);
 }
 
+// IO
+
 int SD_Width() {
     return g_width;
 }
@@ -453,6 +499,10 @@ int SD_MouseX() {
 
 int SD_MouseY() {
     return g_mouse_y;
+}
+
+Point SD_MousePos() {
+    return (Point){(float)g_mouse_x, (float)g_mouse_y};
 }
 
 bool SD_MouseLeft() {
@@ -497,5 +547,22 @@ unsigned int SD_RGBA(unsigned char r, unsigned char g, unsigned char b, unsigned
 void SD_Sleep(int ms) {
     Sleep(ms);
 }
+
+// MATH
+
+bool SD_InsideSquare(Point p, Point min, float size) {
+    return (p.x >= min.x && p.x <= min.x + size &&
+            p.y >= min.y && p.y <= min.y + size);
+}
+
+// HELPERS
+
+Point SD_Point(float x, float y) {
+    return (Point){x, y};
+}
+
+
+#define SD_EXPAND_POINT(point) point.x, point.y
+
 
 #endif
