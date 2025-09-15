@@ -1,5 +1,3 @@
-// SimpleDraw library
-
 #ifndef SD_H
 #define SD_H
 
@@ -28,7 +26,8 @@ static bool g_mouse_right = false;
 static bool g_keys[256] = {0};
 static double g_key_last_time[256] = {0};
 static bool g_key_double[256] = {0};
-
+static bool g_resize_pending = false;
+static int g_new_width, g_new_height;
 
 static int g_target_fps = 60;
 static LARGE_INTEGER g_frequency;
@@ -37,6 +36,7 @@ static LARGE_INTEGER g_frame_start_time;
 static int g_frame_count = 0;
 static float g_fps = 0.0f;
 static LARGE_INTEGER g_fps_timer;
+static bool g_in_sizemove = false;
 
 #define SD_RED     0xFF0000
 #define SD_GREEN   0x00FF00
@@ -51,14 +51,44 @@ static LARGE_INTEGER g_fps_timer;
 #define SD_GRAY    0x808080
 #define SD_BROWN   0x8B4513
 
-
-// DEFINITION
-
 typedef struct {
     float x, y;
 } Point;
 
-// EVENTS
+static inline unsigned int SD_RGBToBGRA(unsigned int rgb_color) {
+    return ((rgb_color & 0xFF0000) >> 16) |
+           (rgb_color & 0x00FF00) |
+           ((rgb_color & 0x0000FF) << 16) |
+           0xFF000000;
+}
+
+static inline void SD_HandleResize() {
+    if (g_resize_pending && !g_in_sizemove) {
+        g_width = g_new_width;
+        g_height = g_new_height;
+
+        if (g_hBitmap) {
+            DeleteObject(g_hBitmap);
+            g_hBitmap = NULL;
+            g_pixels = NULL;
+        }
+
+        HDC dc = GetDC(g_hwnd);
+        BITMAPINFO bi = {0};
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = g_width;
+        bi.bmiHeader.biHeight = -g_height;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+
+        g_hBitmap = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &g_pixels, NULL, 0);
+        ReleaseDC(g_hwnd, dc);
+
+        g_resize_pending = false;
+    }
+}
+
 static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_PAINT: {
@@ -66,8 +96,12 @@ static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             HDC dc = BeginPaint(hwnd, &ps);
             if (g_hBitmap) {
                 HDC mdc = CreateCompatibleDC(dc);
-                SelectObject(mdc, g_hBitmap);
-                BitBlt(dc, 0, 0, g_width, g_height, mdc, 0, 0, SRCCOPY);
+                HGDIOBJ old_obj = SelectObject(mdc, g_hBitmap);
+                BitBlt(dc, ps.rcPaint.left, ps.rcPaint.top,
+                       ps.rcPaint.right - ps.rcPaint.left,
+                       ps.rcPaint.bottom - ps.rcPaint.top,
+                       mdc, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+                SelectObject(mdc, old_obj);
                 DeleteDC(mdc);
             }
             EndPaint(hwnd, &ps);
@@ -111,7 +145,6 @@ static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 g_key_last_time[wParam] = current;
             }
             return 0;
-            return 0;
         case WM_KEYUP:
             if (wParam < 256) g_keys[wParam] = false;
             return 0;
@@ -119,34 +152,28 @@ static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             g_should_close = 1;
             return 0;
         case WM_SIZE: {
-            g_width = LOWORD(lParam);
-            g_height = HIWORD(lParam);
-
-            if (g_hBitmap) {
-                DeleteObject(g_hBitmap);
-                g_hBitmap = NULL;
-                g_pixels = NULL;
+            if (wParam != SIZE_MINIMIZED) {
+                g_new_width = LOWORD(lParam);
+                g_new_height = HIWORD(lParam);
+                g_resize_pending = true;
+                SD_HandleResize();
+                InvalidateRect(hwnd, NULL, FALSE);
             }
-
-            HDC dc = GetDC(hwnd);
-            BITMAPINFO bi = {0};
-            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-            bi.bmiHeader.biWidth = g_width;
-            bi.bmiHeader.biHeight = -g_height;
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 32;
-            bi.bmiHeader.biCompression = BI_RGB;
-
-            g_hBitmap = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &g_pixels, NULL, 0);
-            ReleaseDC(hwnd, dc);
-
             return 0;
         }
+        case WM_ENTERSIZEMOVE:
+            g_in_sizemove = true;
+            return 0;
+        case WM_EXITSIZEMOVE:
+            g_in_sizemove = false;
+            SD_HandleResize();
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
-
-// WINDOW
 
 void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
     g_width = width;
@@ -166,8 +193,9 @@ void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
     wc.lpfnWndProc = SD_WndProc;
     wc.hInstance = hInst;
     wc.lpszClassName = CLASS_NAME;
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hbrBackground = NULL;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC | CS_DBLCLKS;
 
     RegisterClassW(&wc);
 
@@ -181,7 +209,7 @@ void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
     if (!resizable) {
         style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     } else {
-        style = WS_OVERLAPPED; // WARN: CAN CAUSE FPS DROP
+        style = WS_OVERLAPPEDWINDOW;
     }
 
     AdjustWindowRect(&rect, style, FALSE);
@@ -197,7 +225,6 @@ void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
     free(wtitle);
 
     ShowWindow(g_hwnd, SW_SHOW);
-    UpdateWindow(g_hwnd);
 
     BITMAPINFO bi = {0};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -276,7 +303,7 @@ void SD_EndFrame() {
         }
     }
 
-    if (g_hwnd) {
+    if (g_hwnd && !g_in_sizemove) {
         InvalidateRect(g_hwnd, NULL, FALSE);
         UpdateWindow(g_hwnd);
     }
@@ -294,49 +321,51 @@ float SD_GetFPS() {
     return g_fps;
 }
 
-// DRAW
+static inline void SD_FastFill32(void* dest, unsigned int value, size_t count) {
+    unsigned int* ptr = (unsigned int*)dest;
+    for (size_t i = 0; i < count; i++) {
+        ptr[i] = value;
+    }
+}
 
 void SD_Fill(unsigned int color) {
     if (!g_pixels) return;
-    unsigned char *p = (unsigned char *)g_pixels;
-    unsigned char r = (color >> 16) & 0xFF;
-    unsigned char g = (color >> 8) & 0xFF;
-    unsigned char b = color & 0xFF;
+    unsigned int bgra_color = SD_RGBToBGRA(color);
+    SD_FastFill32(g_pixels, bgra_color, g_width * g_height);
+}
 
-    for (int i = 0; i < g_width * g_height * 4; i += 4) {
-        p[i + 0] = b;
-        p[i + 1] = g;
-        p[i + 2] = r;
-        p[i + 3] = 255;
-    }
+static inline void SD_PlotUnsafe(int x, int y, unsigned int color) {
+    unsigned int* pixels = (unsigned int*)g_pixels;
+    pixels[y * g_width + x] = SD_RGBToBGRA(color);
 }
 
 void SD_Plot(int x, int y, unsigned int color) {
     if (!g_pixels || x < 0 || x >= g_width || y < 0 || y >= g_height) return;
-
-    unsigned char *p = (unsigned char *)g_pixels;
-    unsigned char r = (color >> 16) & 0xFF;
-    unsigned char g = (color >> 8) & 0xFF;
-    unsigned char b = color & 0xFF;
-
-    int idx = (y * g_width + x) * 4;
-    p[idx + 0] = b;
-    p[idx + 1] = g;
-    p[idx + 2] = r;
-    p[idx + 3] = 255;
+    SD_PlotUnsafe(x, y, color);
 }
 
 void SD_Rect(int x, int y, int w, int h, unsigned int color) {
-    for (int yy = y; yy < y + h && yy < g_height; yy++) {
-        if (yy < 0) continue;
-        for (int xx = x; xx < x + w && xx < g_width; xx++) {
-            if (xx < 0) continue;
-            SD_Plot(xx, yy, color);
-        }
+    if (!g_pixels || w <= 0 || h <= 0) return;
+
+    int x1 = x < 0 ? 0 : x;
+    int y1 = y < 0 ? 0 : y;
+    int x2 = x + w > g_width ? g_width : x + w;
+    int y2 = y + h > g_height ? g_height : y + h;
+
+    if (x1 >= x2 || y1 >= y2) return;
+
+    unsigned int bgra = SD_RGBToBGRA(color);
+    unsigned int* pixels = (unsigned int*)g_pixels;
+    int width = x2 - x1;
+
+    for (int yy = y1; yy < y2; yy++) {
+        SD_FastFill32(&pixels[yy * g_width + x1], bgra, width);
     }
 }
 
 void SD_RectOutline(int x, int y, int w, int h, unsigned int color) {
+    if (w <= 0 || h <= 0) return;
+
     for (int xx = x; xx < x + w; xx++) {
         SD_Plot(xx, y, color);
         SD_Plot(xx, y + h - 1, color);
@@ -348,16 +377,37 @@ void SD_RectOutline(int x, int y, int w, int h, unsigned int color) {
 }
 
 void SD_Circle(int x, int y, int radius, unsigned int color) {
-    for (int yy = -radius; yy <= radius; yy++) {
-        for (int xx = -radius; xx <= radius; xx++) {
-            if (xx*xx + yy*yy <= radius*radius) {
-                SD_Plot(x + xx, y + yy, color);
+    if (radius <= 0) return;
+
+    int x1 = x - radius;
+    int y1 = y - radius;
+    int x2 = x + radius;
+    int y2 = y + radius;
+
+    if (x1 >= g_width || y1 >= g_height || x2 < 0 || y2 < 0) return;
+
+    int r_sq = radius * radius;
+
+    for (int yy = y1; yy <= y2; yy++) {
+        if (yy < 0 || yy >= g_height) continue;
+
+        int dy = yy - y;
+        int dy_sq = dy * dy;
+
+        for (int xx = x1; xx <= x2; xx++) {
+            if (xx < 0 || xx >= g_width) continue;
+
+            int dx = xx - x;
+            if (dx*dx + dy_sq <= r_sq) {
+                SD_PlotUnsafe(xx, yy, color);
             }
         }
     }
 }
 
 void SD_CircleOutline(int x, int y, int radius, unsigned int color) {
+    if (radius <= 0) return;
+
     int xx = 0, yy = radius;
     int d = 3 - 2 * radius;
 
@@ -391,7 +441,7 @@ void SD_Line(int x1, int y1, int x2, int y2, unsigned int color) {
     while (true) {
         SD_Plot(x1, y1, color);
         if (x1 == x2 && y1 == y2) break;
-        int e2 = 2 * err;
+        int e2 = err << 1;
         if (e2 > -dy) {
             err -= dy;
             x1 += sx;
@@ -409,6 +459,13 @@ void SD_Triangle(int x1, int y1, int x2, int y2, int x3, int y3, unsigned int co
     int min_y = (y1 < y2) ? (y1 < y3 ? y1 : y3) : (y2 < y3 ? y2 : y3);
     int max_y = (y1 > y2) ? (y1 > y3 ? y1 : y3) : (y2 > y3 ? y2 : y3);
 
+    if (min_x >= g_width || max_x < 0 || min_y >= g_height || max_y < 0) return;
+
+    min_x = min_x < 0 ? 0 : min_x;
+    max_x = max_x >= g_width ? g_width - 1 : max_x;
+    min_y = min_y < 0 ? 0 : min_y;
+    max_y = max_y >= g_height ? g_height - 1 : max_y;
+
     for (int y = min_y; y <= max_y; y++) {
         for (int x = min_x; x <= max_x; x++) {
             int d1 = (x - x2) * (y1 - y2) - (x1 - x2) * (y - y2);
@@ -419,7 +476,7 @@ void SD_Triangle(int x1, int y1, int x2, int y2, int x3, int y3, unsigned int co
             bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
 
             if (!(has_neg && has_pos)) {
-                SD_Plot(x, y, color);
+                SD_PlotUnsafe(x, y, color);
             }
         }
     }
@@ -432,11 +489,12 @@ void SD_TriangleOutline(int x1, int y1, int x2, int y2, int x3, int y3, unsigned
 }
 
 void SD_DrawText(int x, int y, const char* text, unsigned int color, float scale) {
-    if (!text || scale <= 0.0f) return;
+    if (!text || scale <= 0.0f || !g_pixels) return;
 
     int start_x = x;
-    int scaled_width = (int)(8 * scale);
-    int scaled_height = (int)(16 * scale);
+    int scale_int = (int)scale;
+    int scaled_width = 8 * scale_int;
+    int scaled_height = 16 * scale_int;
 
     for (const char* p = text; *p; p++) {
         unsigned char c = (unsigned char)*p;
@@ -454,14 +512,40 @@ void SD_DrawText(int x, int y, const char* text, unsigned int color, float scale
 
         const unsigned char* font_data = font8x16[c];
 
-        for (int row = 0; row < 16; row++) {
-            unsigned char byte = font_data[row];
+        if (scale_int == 1) {
+            for (int row = 0; row < 16; row++) {
+                unsigned char byte = font_data[row];
+                int py = y + row;
+                if (py < 0 || py >= g_height) continue;
 
-            for (int bit = 0; bit < 8; bit++) {
-                if (byte & (0x80 >> bit)) {
-                    for (int sy = 0; sy < (int)scale; sy++) {
-                        for (int sx = 0; sx < (int)scale; sx++) {
-                            SD_Plot(x + bit * (int)scale + sx, y + row * (int)scale + sy, color);
+                for (int bit = 0; bit < 8; bit++) {
+                    if (byte & (0x80 >> bit)) {
+                        int px = x + bit;
+                        if (px >= 0 && px < g_width) {
+                            SD_PlotUnsafe(px, py, color);
+                        }
+                    }
+                }
+            }
+        } else {
+            for (int row = 0; row < 16; row++) {
+                unsigned char byte = font_data[row];
+
+                for (int bit = 0; bit < 8; bit++) {
+                    if (byte & (0x80 >> bit)) {
+                        int base_x = x + bit * scale_int;
+                        int base_y = y + row * scale_int;
+
+                        for (int sy = 0; sy < scale_int; sy++) {
+                            int py = base_y + sy;
+                            if (py < 0 || py >= g_height) continue;
+
+                            for (int sx = 0; sx < scale_int; sx++) {
+                                int px = base_x + sx;
+                                if (px >= 0 && px < g_width) {
+                                    SD_PlotUnsafe(px, py, color);
+                                }
+                            }
                         }
                     }
                 }
@@ -482,8 +566,6 @@ void SD_DrawFText(int x, int y, unsigned int color, float scale, const char* fmt
 
     SD_DrawText(x, y, buffer, color, scale);
 }
-
-// IO
 
 int SD_Width() {
     return g_width;
@@ -535,7 +617,6 @@ bool SD_KeyDouble(int key) {
     return ret;
 }
 
-
 unsigned int SD_RGB(unsigned char r, unsigned char g, unsigned char b) {
     return (r << 16) | (g << 8) | b;
 }
@@ -548,21 +629,15 @@ void SD_Sleep(int ms) {
     Sleep(ms);
 }
 
-// MATH
-
 bool SD_InsideSquare(Point p, Point min, float size) {
     return (p.x >= min.x && p.x <= min.x + size &&
             p.y >= min.y && p.y <= min.y + size);
 }
 
-// HELPERS
-
 Point SD_Point(float x, float y) {
     return (Point){x, y};
 }
 
-
 #define SD_EXPAND_POINT(point) point.x, point.y
-
 
 #endif

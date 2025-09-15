@@ -1,9 +1,9 @@
 #include "sd.h"
 
 int main() {
-    SD_CreateWindow(800, 600, "SD Demo", false);
+    SD_CreateWindow(800, 600, "SD Demo", true);
 
-    Point pos = SD_Point(SD_Width() / 2, SD_Height() / 2);
+    Point pos = SD_Point(SD_Width() / 2 - 20, SD_Height() / 2 - 20);
     int step = 2;
     int fps = 120;
 
@@ -29,8 +29,8 @@ int main() {
             step -= 1;
         }
         if (SD_KeyDouble('R')) { // Reset Position
-            pos.x = SD_Width() / 2;
-            pos.y = SD_Height() / 2;
+            pos.x = SD_Width() / 2 - 20;
+            pos.y = SD_Height() / 2 - 20;
         }
 
         SD_Fill(SD_BLACK);
@@ -46,7 +46,7 @@ int main() {
 
         if (SD_MouseLeft()) {
             Point mouse = SD_MousePos();
-            SD_Circle(SD_EXPAND_POINT(mouse), 10, SD_YELLOW);
+            SD_Circle(SD_EXPAND_POINT(mouse), 10, 0xFF0000FF);
         }
 
         if (SD_MouseRight()) {
