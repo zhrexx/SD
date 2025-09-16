@@ -38,22 +38,41 @@ static float g_fps = 0.0f;
 static LARGE_INTEGER g_fps_timer;
 static bool g_in_sizemove = false;
 
-#define SD_RED     0xFF0000
-#define SD_GREEN   0x00FF00
-#define SD_BLUE    0x0000FF
-#define SD_WHITE   0xFFFFFF
-#define SD_BLACK   0x000000
-#define SD_YELLOW  0xFFFF00
-#define SD_CYAN    0x00FFFF
-#define SD_MAGENTA 0xFF00FF
-#define SD_ORANGE  0xFFA500
-#define SD_PURPLE  0x800080
-#define SD_GRAY    0x808080
-#define SD_BROWN   0x8B4513
-
 typedef struct {
     float x, y;
 } Point;
+
+unsigned int SD_RGB(unsigned char r, unsigned char g, unsigned char b) {
+    return (r << 16) | (g << 8) | b;
+}
+
+unsigned int SD_RGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
+    return (r << 16) | (g << 8) | b;
+}
+
+unsigned int SD_RGBA64(unsigned long long rgba) {
+    unsigned char r = (rgba >> 24) & 0xFF;
+    unsigned char g = (rgba >> 16) & 0xFF;
+    unsigned char b = (rgba >> 8)  & 0xFF;
+    unsigned char a = (rgba)       & 0xFF;
+
+    return (r << 16) | (g << 8) | b;
+}
+
+
+
+#define SD_RED     SD_RGBA64(0xFF0000FF)
+#define SD_GREEN   SD_RGBA64(0x00FF00FF)
+#define SD_BLUE    SD_RGBA64(0x0000FFFF)
+#define SD_WHITE   SD_RGBA64(0xFFFFFFFF)
+#define SD_BLACK   SD_RGBA64(0x000000FF)
+#define SD_YELLOW  SD_RGBA64(0xFFFF00FF)
+#define SD_CYAN    SD_RGBA64(0x00FFFFFF)
+#define SD_MAGENTA SD_RGBA64(0xFF00FFFF)
+#define SD_ORANGE  SD_RGBA64(0xFFA500FF)
+#define SD_PURPLE  SD_RGBA64(0x800080FF)
+#define SD_GRAY    SD_RGBA64(0x808080FF)
+#define SD_BROWN   SD_RGBA64(0x8B4513FF)
 
 static inline unsigned int SD_RGBToBGRA(unsigned int rgb_color) {
     return ((rgb_color & 0xFF0000) >> 16) |
@@ -617,14 +636,6 @@ bool SD_KeyDouble(int key) {
     return ret;
 }
 
-unsigned int SD_RGB(unsigned char r, unsigned char g, unsigned char b) {
-    return (r << 16) | (g << 8) | b;
-}
-
-unsigned int SD_RGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
-    return (r << 16) | (g << 8) | b;
-}
-
 void SD_Sleep(int ms) {
     Sleep(ms);
 }
@@ -634,10 +645,24 @@ bool SD_InsideSquare(Point p, Point min, float size) {
             p.y >= min.y && p.y <= min.y + size);
 }
 
+bool SD_RectOverlap(Point a, int aw, int ah, Point b, int bw, int bh) {
+    return (a.x < b.x + bw &&
+            a.x + aw > b.x &&
+            a.y < b.y + bh &&
+            a.y + ah > b.y);
+}
+
+
 Point SD_Point(float x, float y) {
     return (Point){x, y};
 }
 
+
+
 #define SD_EXPAND_POINT(point) point.x, point.y
+int __sd__select__counter = 0;
+#define SD_SELECT(a, b) (__sd__select__counter++ % 2 ? a : b) // Pseudo-random selector (uses incrementation)
+
+#define SD_GET_RECT_CENTER(start_p, size) (Point){(start_p.x + size.x / 2.0f), (start_p.y + size.y / 2.0f)}
 
 #endif

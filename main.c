@@ -1,58 +1,89 @@
+#include <stdint.h>
+
 #include "sd.h"
 
+
 int main() {
-    SD_CreateWindow(800, 600, "SD Demo", true);
+    SD_CreateWindow(800, 600, "SD Demo", false);
+
+    uint32_t start = timeGetTime();
 
     Point pos = SD_Point(SD_Width() / 2 - 20, SD_Height() / 2 - 20);
     int step = 2;
     int fps = 120;
+    int point_size = 20;
+    int score = 0;
 
+    Point points[256] = {0};
+    int point_count = 0;
+
+    for (point_count = 0; point_count < 16; point_count++) {
+        points[point_count].x = rand() % SD_Width() - point_size;
+        points[point_count].y = rand() % SD_Height() - point_size;
+    }
 
     while (SD_WindowActive()) {
         SD_StartFrame();
-        SD_SetFPS(fps);
+            SD_SetFPS(fps);
 
-        if (SD_Key('W') && pos.y > 0) pos.y -= step;
-        if (SD_Key('S') && pos.y < SD_Height() - 20) pos.y += step;
-        if (SD_Key('A') && pos.x > 0) pos.x -= step;
-        if (SD_Key('D') && pos.x < SD_Width() - 20) pos.x += step;
-        if (SD_KeyDouble('M')) { // More fps
-            fps += 30;
-        }
-        if (SD_KeyDouble('L')) { // Less fps
-            fps -= 30;
-        }
-        if (SD_KeyDouble('F')) { // Faster
-            step += 1;
-        }
-        if (SD_KeyDouble('G')) { // Slower
-            step -= 1;
-        }
-        if (SD_KeyDouble('R')) { // Reset Position
-            pos.x = SD_Width() / 2 - 20;
-            pos.y = SD_Height() / 2 - 20;
-        }
+            if (SD_Key('W') && pos.y > 0) pos.y -= step;
+            if (SD_Key('S') && pos.y < SD_Height() - 20) pos.y += step;
+            if (SD_Key('A') && pos.x > 0) pos.x -= step;
+            if (SD_Key('D') && pos.x < SD_Width() - 20) pos.x += step;
+            if (SD_KeyDouble('M')) { // More fps
+                fps += 30;
+            }
+            if (SD_KeyDouble('L')) { // Less fps
+                fps -= 30;
+            }
+            if (SD_KeyDouble('F')) { // Faster
+                step += 1;
+            }
+            if (SD_KeyDouble('G')) { // Slower
+                step -= 1;
+            }
+            if (SD_KeyDouble('R')) { // Reset Position
+                pos.x = SD_Width() / 2 - 20;
+                pos.y = SD_Height() / 2 - 20;
+            }
 
-        SD_Fill(SD_BLACK);
-        float current = SD_GetFPS();
-        SD_DrawFText(25, 50, SD_WHITE, 1.0f, "FPS: %d | LIMITER == %d | STEP == %d | POS == (%.1f, %.1f)", (int)current, fps, step, pos.x, pos.y);
+            SD_Fill(SD_BLACK);
+            SD_Rect(pos.x, pos.y, 20, 20, SD_BLUE);
 
-        SD_Rect(pos.x, pos.y, 20, 20, SD_RED);
 
-        // TODO: Example
-        if (SD_MouseLeft() && SD_InsideSquare(SD_MousePos(), SD_Point(pos.x, pos.y), 20)) {
 
-        }
+            for (int i = 0; i < point_count; i++) {
+                Point p = points[i];
+                SD_Rect(SD_EXPAND_POINT(p), point_size, point_size, SD_RED);
 
-        if (SD_MouseLeft()) {
-            Point mouse = SD_MousePos();
-            SD_Circle(SD_EXPAND_POINT(mouse), 10, 0xFF0000FF);
-        }
+                if (SD_RectOverlap(pos, point_size, point_size, p, point_size, point_size)) {
+                    printf("Point %d collision\n", i);
+                    points[i] = SD_Point(rand() % SD_Width() - point_size, rand() % SD_Height() - point_size);
+                    score++;
+                }
+            }
 
-        if (SD_MouseRight()) {
-            Point mouse = SD_MousePos();
-            SD_Circle(SD_EXPAND_POINT(mouse), 10, SD_GREEN);
-        }
+
+            float current = SD_GetFPS();
+            SD_DrawFText(25, 50, SD_WHITE, 1.0f, "FPS: %d | LIMITER == %d | STEP == %d\nPOS == (%.1f, %.1f) | SCORE == %d | PLAYING %u seconds",
+                (int)current, fps, step, pos.x, pos.y, score, (timeGetTime() - start) / 1000);
+
+
+
+            // TODO: Example
+            if (SD_MouseLeft() && SD_InsideSquare(SD_MousePos(), SD_Point(pos.x, pos.y), 20)) {
+
+            }
+
+            if (SD_MouseLeft()) {
+                Point mouse = SD_MousePos();
+                SD_Circle(SD_EXPAND_POINT(mouse), 10, 0xFF0000FF);
+            }
+
+            if (SD_MouseRight()) {
+                Point mouse = SD_MousePos();
+                SD_Circle(SD_EXPAND_POINT(mouse), 10, SD_GREEN);
+            }
 
         SD_EndFrame();
     }
