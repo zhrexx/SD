@@ -61,9 +61,9 @@ int main() {
     int score = 0;
 
     Point points[256] = {0};
-    int point_count = 0;
+    int point_spawn_count = 16;
 
-    for (point_count = 0; point_count < 16; point_count++) {
+    for (int point_count = 0; point_count < 255; point_count++) {
         points[point_count].x = rand() % SD_Width() - point_size;
         points[point_count].y = rand() % SD_Height() - point_size;
     }
@@ -88,6 +88,17 @@ int main() {
             if (SD_KeyDouble('G')) { // Slower
                 step -= 1;
             }
+            if (SD_KeyDouble('P')) { // Spawn more points
+                if (point_spawn_count + 8 < 256) {
+                    point_spawn_count += 8;
+                }
+            }
+            if (SD_KeyDouble('O')) {
+                for (int point_count = 0; point_count < 255; point_count++) {
+                    points[point_count].x = rand() % SD_Width() - point_size;
+                    points[point_count].y = rand() % SD_Height() - point_size;
+                }
+            }
             if (SD_KeyDouble('R')) { // Reset Position
                 pos.x = SD_Width() / 2 - 20;
                 pos.y = SD_Height() / 2 - 20;
@@ -98,27 +109,23 @@ int main() {
 
 
 
-            for (int i = 0; i < point_count; i++) {
+            for (int i = 0; i < point_spawn_count; i++) {
                 Point p = points[i];
                 SD_Rect(SD_EXPAND_POINT(p), point_size, point_size, SD_RED);
 
                 if (SD_RectOverlap(pos, point_size, point_size, p, point_size, point_size)) {
                     points[i] = SD_Point(rand() % SD_Width() - point_size, rand() % SD_Height() - point_size);
                     score++;
+                    SpawnConfetti(pos, 20, 180);
                 }
+
             }
 
             UpdateDrawConfetti();
 
             float current = SD_GetFPS();
-            SD_DrawFText(25, 50, SD_WHITE, 1.0f, "FPS: %d | LIMITER == %d | STEP == %d\nPOS == (%.1f, %.1f) | SCORE == %d | PLAYING %u seconds",
-                (int)current, fps, step, pos.x, pos.y, score, (timeGetTime() - start) / 1000);
-
-
-            // TODO: Example
-            if (SD_MouseLeft() && SD_InsideSquare(SD_MousePos(), SD_Point(pos.x, pos.y), 20)) {
-                SpawnConfetti(SD_MousePos(), 100, 120);
-            }
+            SD_DrawFText(25, 50, SD_WHITE, 1.0f, "FPS: %d | LIMITER == %d | STEP == %d\nPOS == (%.1f, %.1f) | SCORE == %d | %d points spawed | PLAYING %u seconds",
+                (int)current, fps, step, pos.x, pos.y, score, point_spawn_count, (timeGetTime() - start) / 1000);
 
             if (SD_MouseLeft()) {
                 Point mouse = SD_MousePos();

@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #pragma comment(lib, "winmm.lib")
 #include "font8x16.h"
+#include "event.h"
 
 static int g_width = 800;
 static int g_height = 600;
@@ -37,6 +38,7 @@ static int g_frame_count = 0;
 static float g_fps = 0.0f;
 static LARGE_INTEGER g_fps_timer;
 static bool g_in_sizemove = false;
+static event_context_t *g_events = NULL;
 
 typedef struct {
     float x, y;
@@ -105,6 +107,7 @@ static inline void SD_HandleResize() {
         ReleaseDC(g_hwnd, dc);
 
         g_resize_pending = false;
+        event_dispatch(g_events, "sd_window_resize", NULL, 0);
     }
 }
 
@@ -195,6 +198,9 @@ static LRESULT CALLBACK SD_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 }
 
 void SD_CreateWindow(int width, int height, const char* title, bool resizable) {
+    event_create_context(&g_events, 0);
+
+
     g_width = width;
     g_height = height;
     g_should_close = 0;
@@ -268,6 +274,7 @@ bool SD_WindowActive() {
 }
 
 void SD_DestroyWindow() {
+    event_destroy_context(g_events);
     timeEndPeriod(1);
     if (g_hBitmap) {
         DeleteObject(g_hBitmap);
