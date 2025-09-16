@@ -2,9 +2,55 @@
 
 #include "sd.h"
 
+typedef struct {
+    Point pos;
+    float angle;
+    Point vel;
+    unsigned int color;
+    int lifetime;
+} Confetti;
+
+Confetti confettis[512];
+int confetti_count = 0;
+
+void SpawnConfetti(Point center, int count, int lifetime) {
+    for (int i = 0; i < count && confetti_count < 512; i++) {
+        float angle = ((float)rand() / RAND_MAX) * 2.0f * 3.14159f;
+        float speed = 2.0f + ((float)rand() / RAND_MAX) * 3.0f;
+        Point vel = { cosf(angle) * speed, sinf(angle) * speed };
+        unsigned int colors[] = { SD_RED, SD_GREEN, SD_BLUE, SD_YELLOW, SD_CYAN, SD_MAGENTA, SD_ORANGE, SD_PURPLE };
+        unsigned int color = colors[rand() % 8];
+
+        confettis[confetti_count++] = (Confetti){ center, 0, vel, color, lifetime };
+    }
+}
+
+void UpdateDrawConfetti() {
+    for (int i = 0; i < confetti_count; i++) {
+        Confetti* c = &confettis[i];
+
+        c->pos.x += c->vel.x;
+        c->pos.y += c->vel.y;
+
+        c->vel.y += 0.1f;
+
+        SD_Rect((int)c->pos.x, (int)c->pos.y, 4, 4, c->color);
+
+        c->lifetime--;
+    }
+
+    int j = 0;
+    for (int i = 0; i < confetti_count; i++) {
+        if (confettis[i].lifetime > 0) {
+            confettis[j++] = confettis[i];
+        }
+    }
+    confetti_count = j;
+}
+
 
 int main() {
-    SD_CreateWindow(800, 600, "SD Demo", false);
+    SD_CreateWindow(800, 600, "SD Demo", true);
 
     uint32_t start = timeGetTime();
 
@@ -57,22 +103,21 @@ int main() {
                 SD_Rect(SD_EXPAND_POINT(p), point_size, point_size, SD_RED);
 
                 if (SD_RectOverlap(pos, point_size, point_size, p, point_size, point_size)) {
-                    printf("Point %d collision\n", i);
                     points[i] = SD_Point(rand() % SD_Width() - point_size, rand() % SD_Height() - point_size);
                     score++;
                 }
             }
 
+            UpdateDrawConfetti();
 
             float current = SD_GetFPS();
             SD_DrawFText(25, 50, SD_WHITE, 1.0f, "FPS: %d | LIMITER == %d | STEP == %d\nPOS == (%.1f, %.1f) | SCORE == %d | PLAYING %u seconds",
                 (int)current, fps, step, pos.x, pos.y, score, (timeGetTime() - start) / 1000);
 
 
-
             // TODO: Example
             if (SD_MouseLeft() && SD_InsideSquare(SD_MousePos(), SD_Point(pos.x, pos.y), 20)) {
-
+                SpawnConfetti(SD_MousePos(), 100, 120);
             }
 
             if (SD_MouseLeft()) {

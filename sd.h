@@ -395,6 +395,50 @@ void SD_RectOutline(int x, int y, int w, int h, unsigned int color) {
     }
 }
 
+void SD_RectAtAngle(int cx, int cy, int w, int h, float angle, unsigned int color) {
+    if (w <= 0 || h <= 0) return;
+
+    float cosA = cosf(angle);
+    float sinA = sinf(angle);
+    float hw = w / 2.0f;
+    float hh = h / 2.0f;
+
+    float corners[4][2] = {
+        {-hw, -hh}, { hw, -hh}, { hw, hh}, {-hw, hh}
+    };
+    float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+    for (int i = 0; i < 4; i++) {
+        float x = cx + corners[i][0] * cosA - corners[i][1] * sinA;
+        float y = cy + corners[i][0] * sinA + corners[i][1] * cosA;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+    }
+
+    int x1 = max(0, (int)minX);
+    int y1 = max(0, (int)minY);
+    int x2 = min(g_width, (int)maxX + 1);
+    int y2 = min(g_height, (int)maxY + 1);
+
+    unsigned int* pixels = (unsigned int*)g_pixels;
+    unsigned int bgra = SD_RGBToBGRA(color);
+
+    for (int y = y1; y < y2; y++) {
+        for (int x = x1; x < x2; x++) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float localX =  dx * cosA + dy * sinA;
+            float localY = -dx * sinA + dy * cosA;
+
+            if (localX >= -hw && localX < hw && localY >= -hh && localY < hh) {
+                pixels[y * g_width + x] = bgra;
+            }
+        }
+    }
+}
+
+
 void SD_Circle(int x, int y, int radius, unsigned int color) {
     if (radius <= 0) return;
 
@@ -585,6 +629,18 @@ void SD_DrawFText(int x, int y, unsigned int color, float scale, const char* fmt
 
     SD_DrawText(x, y, buffer, color, scale);
 }
+
+
+// Callbacks draw_fn every steps specifyed times and gives angle in degrees
+void SD_DrawAroundPoint(void (*draw_fn)(Point p, float angle), Point p, const int steps) {
+    for (int i = 0; i < steps; i++) {
+        float angle = (360.0f / steps) * i;
+        draw_fn(p, angle);
+    }
+}
+
+
+// UTILS
 
 int SD_Width() {
     return g_width;
